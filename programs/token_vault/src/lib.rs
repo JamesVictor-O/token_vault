@@ -42,7 +42,7 @@ pub struct Initialize<'info> {
     #[account(
         init,
         payer = user,
-        seeds = [b"state", user.key().as_ref()],
+        seeds = [b"state", user.key().as_ref(), mint.key().as_ref()],
         bump,
         space = VaultState::INIT_SPACE,
     )]
@@ -96,7 +96,7 @@ pub struct Deposit<'info> {
     pub vault: InterfaceAccount<'info, TokenAccount>,
  
     #[account(
-        seeds = [b"state", user.key().as_ref()],
+        seeds = [b"state", user.key().as_ref(), mint.key().as_ref()],
         bump = vault_state.state_bump,
     )]
     pub vault_state: Account<'info, VaultState>,
@@ -153,7 +153,7 @@ pub struct Withdraw<'info> {
     pub vault: InterfaceAccount<'info, TokenAccount>,
  
     #[account(
-        seeds = [b"state", user.key().as_ref()],
+        seeds = [b"state", user.key().as_ref(), mint.key().as_ref()],
         bump = vault_state.state_bump,
     )]
     pub vault_state: Account<'info, VaultState>,
@@ -212,7 +212,7 @@ pub struct Close<'info> {
  
     #[account(
         mut,
-        seeds = [b"state", user.key().as_ref()],
+        seeds = [b"state", user.key().as_ref(), mint.key().as_ref()],
         bump = vault_state.state_bump,
         close = user,
     )]
@@ -225,6 +225,11 @@ pub struct Close<'info> {
 
 impl<'info> Close<'info> {
     pub fn close(&mut self) -> Result<()> {
+
+        require!(
+            self.vault.amount == 0,
+            VaultError::VaultNotEmpty
+        );
  
         // What we're doing: closing the vault's Token Account
         // This sends the rent back to the user
@@ -233,11 +238,12 @@ impl<'info> Close<'info> {
             destination: self.user.to_account_info(), // where rent goes
             authority: self.vault_state.to_account_info(), // who authorizes
         };
- 
+         let mint_key = self.mint.key();
         // Same PDA signer pattern (vault_state is a PDA)
         let seeds = &[
             b"state",
             self.user.to_account_info().key.as_ref(),
+            mint_key.as_ref(),
             &[self.vault_state.state_bump],
         ];
         let signer_seeds = &[&seeds[..]];
@@ -266,5 +272,11 @@ pub struct VaultState {
  
 impl Space for VaultState {
     const INIT_SPACE: usize = 8 + 1 + 1;
+}
+
+#[error_code]
+pub enum VaultError {
+    #[msg("Vault is not empty")]
+    VaultNotEmpty,
 }
 
